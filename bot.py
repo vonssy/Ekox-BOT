@@ -1178,13 +1178,13 @@ class Ekox:
             )
             return
 
-        for index in range(index_totals - 1):
+        for index in range(index_totals):
             self.log(
                 f"{Fore.GREEN+Style.BRIGHT} ● {Style.RESET_ALL}"
                 f"{Fore.BLUE+Style.BRIGHT}Claim{Style.RESET_ALL}"
                 f"{Fore.WHITE+Style.BRIGHT} {index+1} {Style.RESET_ALL}"
                 f"{Fore.MAGENTA+Style.BRIGHT}Of{Style.RESET_ALL}"
-                f"{Fore.WHITE+Style.BRIGHT} {index_totals - 1} {Style.RESET_ALL}                                   "
+                f"{Fore.WHITE+Style.BRIGHT} {index_totals} {Style.RESET_ALL}                                   "
             )
 
             await self.process_perform_claim(account, address, index, use_proxy)
