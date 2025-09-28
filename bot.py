@@ -733,7 +733,7 @@ class Ekox:
             self.print_transfer_question()
             self.print_delay_question()
 
-        if option == 2:
+        elif option == 2:
             self.print_wrap_question()
             self.print_delay_question()
 
@@ -1213,7 +1213,7 @@ class Ekox:
                 )
                 await self.process_option_1(account, address, use_proxy)
             
-            if option == 2:
+            elif option == 2:
                 self.log(
                     f"{Fore.CYAN+Style.BRIGHT}Option    :{Style.RESET_ALL}"
                     f"{Fore.BLUE+Style.BRIGHT} Wrap ETH to WETH {Style.RESET_ALL}"
