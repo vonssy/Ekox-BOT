@@ -492,14 +492,14 @@ class Ekox:
             )
             return None, None
         
-    async def perform_claim(self, account: str, address: str, index: int, use_proxy: bool):
+    async def perform_claim(self, account: str, address: str, use_proxy: bool):
         try:
             web3 = await self.get_web3_with_check(address, use_proxy)
 
             router_address = web3.to_checksum_address(self.WITHDRAW_CONTRACT_ADDRESS)
 
             token_contract = web3.eth.contract(address=router_address, abi=self.ERC20_CONTRACT_ABI)
-            claim_data = token_contract.functions.claim(index, address)
+            claim_data = token_contract.functions.claim(0, address)
             
             estimated_gas = claim_data.estimate_gas({"from":address})
             max_priority_fee = web3.to_wei(1, "gwei")
@@ -950,8 +950,8 @@ class Ekox:
                 f"{Fore.RED+Style.BRIGHT} Perform On-Chain Failed {Style.RESET_ALL}"
             )
 
-    async def process_perform_claim(self, account: str, address: str, index: int, use_proxy: bool):
-        tx_hash, block_number = await self.perform_claim(account, address, index, use_proxy)
+    async def process_perform_claim(self, account: str, address: str, use_proxy: bool):
+        tx_hash, block_number = await self.perform_claim(account, address, use_proxy)
         if tx_hash and block_number:
             self.log(
                 f"{Fore.CYAN+Style.BRIGHT}   Status   :{Style.RESET_ALL}"
@@ -1187,7 +1187,7 @@ class Ekox:
                 f"{Fore.WHITE+Style.BRIGHT} {index_totals} {Style.RESET_ALL}                                   "
             )
 
-            await self.process_perform_claim(account, address, index, use_proxy)
+            await self.process_perform_claim(account, address, use_proxy)
             await self.print_timer()
 
     async def process_accounts(self, account: str, address: str, option: int, use_proxy: bool, rotate_proxy: bool):
