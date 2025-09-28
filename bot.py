@@ -26,6 +26,7 @@ class Ekox:
             {"type":"function","name":"balanceOf","stateMutability":"view","inputs":[{"name":"address","type":"address"}],"outputs":[{"name":"","type":"uint256"}]},
             {"type":"function","name":"allowance","stateMutability":"view","inputs":[{"name":"owner","type":"address"},{"name":"spender","type":"address"}],"outputs":[{"name":"","type":"uint256"}]},
             {"type":"function","name":"approve","stateMutability":"nonpayable","inputs":[{"name":"spender","type":"address"},{"name":"amount","type":"uint256"}],"outputs":[{"name":"","type":"bool"}]},
+            {"type":"function","name":"getOutstandingWithdrawRequests","stateMutability":"view","inputs":[{"internalType":"address","name":"user","type":"address"}],"outputs":[{"internalType":"uint256","name":"","type":"uint256"}]},
             {"type":"function","name":"deposit","stateMutability":"nonpayable","inputs":[{"internalType":"address","name":"_collateralToken","type":"address"},{"internalType":"uint256","name":"_amount","type":"uint256"}],"outputs":[]},
             {"type":"function","name":"withdraw","stateMutability":"nonpayable","inputs":[{"internalType":"uint256","name":"_amount","type":"uint256"},{"internalType":"address","name":"_assetOut","type":"address"}],"outputs":[]},
             {"type":"function","name":"claim","stateMutability":"nonpayable","inputs":[{"internalType":"uint256","name":"withdrawRequestIndex","type":"uint256"},{"internalType":"address","name":"user","type":"address"}],"outputs":[]}
@@ -223,6 +224,26 @@ class Ekox:
                 token_balance = balance / (10**18)
 
                 return token_balance
+            except Exception as e:
+                if attempt < retries - 1:
+                    await asyncio.sleep(3)
+                    continue
+                self.log(
+                    f"{Fore.CYAN+Style.BRIGHT}   Message  :{Style.RESET_ALL}"
+                    f"{Fore.RED+Style.BRIGHT} {str(e)} {Style.RESET_ALL}"
+                )
+                return None
+        
+    async def get_outstanding_withdraw(self, address: str, use_proxy: bool, retries=5):
+        for attempt in range(retries):
+            try:
+                web3 = await self.get_web3_with_check(address, use_proxy)
+
+                contract_address = web3.to_checksum_address(self.WITHDRAW_CONTRACT_ADDRESS)
+                token_contract = web3.eth.contract(address=contract_address, abi=self.ERC20_CONTRACT_ABI)
+                index = token_contract.functions.getOutstandingWithdrawRequests(address).call()
+
+                return index
             except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(3)
@@ -471,14 +492,14 @@ class Ekox:
             )
             return None, None
         
-    async def perform_claim(self, account: str, address: str, use_proxy: bool):
+    async def perform_claim(self, account: str, address: str, index: int, use_proxy: bool):
         try:
             web3 = await self.get_web3_with_check(address, use_proxy)
 
             router_address = web3.to_checksum_address(self.WITHDRAW_CONTRACT_ADDRESS)
 
             token_contract = web3.eth.contract(address=router_address, abi=self.ERC20_CONTRACT_ABI)
-            claim_data = token_contract.functions.claim(0, address)
+            claim_data = token_contract.functions.claim(index, address)
             
             estimated_gas = claim_data.estimate_gas({"from":address})
             max_priority_fee = web3.to_wei(1, "gwei")
@@ -687,24 +708,26 @@ class Ekox:
                 print(f"{Fore.WHITE + Style.BRIGHT}3. Unwrap WETH to ETH{Style.RESET_ALL}")
                 print(f"{Fore.WHITE + Style.BRIGHT}4. Restake WETH to exETH{Style.RESET_ALL}")
                 print(f"{Fore.WHITE + Style.BRIGHT}5. Withdraw exETH to WETH{Style.RESET_ALL}")
-                print(f"{Fore.WHITE + Style.BRIGHT}6. Run All Features{Style.RESET_ALL}")
-                option = int(input(f"{Fore.BLUE + Style.BRIGHT}Choose [1/2/3/4/5/6] -> {Style.RESET_ALL}").strip())
+                print(f"{Fore.WHITE + Style.BRIGHT}6. Claim Rewards{Style.RESET_ALL}")
+                print(f"{Fore.WHITE + Style.BRIGHT}7. Run All Features{Style.RESET_ALL}")
+                option = int(input(f"{Fore.BLUE + Style.BRIGHT}Choose [1/2/3/4/5/6/7] -> {Style.RESET_ALL}").strip())
 
-                if option in [1, 2, 3, 4, 5, 6]:
+                if option in [1, 2, 3, 4, 5, 6, 7]:
                     option_type = (
                         "Send ETH to Friends" if option == 1 else 
                         "Wrap ETH to WETH" if option == 2 else 
                         "Unwrap WETH to ETH" if option == 3 else 
                         "Restake WETH to exETH" if option == 4 else
                         "Withdraw exETH to WETH" if option == 5 else
+                        "Claim Rewards" if option == 6 else
                         "Run All Features"
                     )
                     print(f"{Fore.GREEN + Style.BRIGHT}{option_type} Selected.{Style.RESET_ALL}")
                     break
                 else:
-                    print(f"{Fore.RED + Style.BRIGHT}Please enter either 1, 2, 3, 4, 5, or 6.{Style.RESET_ALL}")
+                    print(f"{Fore.RED + Style.BRIGHT}Please enter either 1, 2, 3, 4, 5, 6, or 7.{Style.RESET_ALL}")
             except ValueError:
-                print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number (1, 2, 3, 4, 5, or 6).{Style.RESET_ALL}")
+                print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number (1, 2, 3, 4, 5, 6, or 7).{Style.RESET_ALL}")
 
         if option == 1:
             self.print_transfer_question()
@@ -727,6 +750,9 @@ class Ekox:
             self.print_delay_question()
 
         elif option == 6:
+            self.print_delay_question()
+
+        elif option == 7:
             self.print_make_transfer_question()
             self.print_wrap_or_unwarp_option()
             self.print_restake_question()
@@ -924,8 +950,8 @@ class Ekox:
                 f"{Fore.RED+Style.BRIGHT} Perform On-Chain Failed {Style.RESET_ALL}"
             )
 
-    async def process_perform_claim(self, account: str, address: str, use_proxy: bool):
-        tx_hash, block_number = await self.perform_claim(account, address, use_proxy)
+    async def process_perform_claim(self, account: str, address: str, index: int, use_proxy: bool):
+        tx_hash, block_number = await self.perform_claim(account, address, index, use_proxy)
         if tx_hash and block_number:
             self.log(
                 f"{Fore.CYAN+Style.BRIGHT}   Status   :{Style.RESET_ALL}"
@@ -1134,6 +1160,36 @@ class Ekox:
             await self.process_perform_withdraw(account, address, use_proxy)
             await self.print_timer()
 
+    async def process_option_6(self, account: str, address: str, use_proxy):
+        self.log(f"{Fore.CYAN+Style.BRIGHT}Claims    :{Style.RESET_ALL}                      ")
+
+        index_totals = await self.get_outstanding_withdraw(address, use_proxy)
+        if index_totals is None:
+            self.log(
+                f"{Fore.CYAN+Style.BRIGHT}   Status   :{Style.RESET_ALL}"
+                f"{Fore.RED+Style.BRIGHT} Fecth Outstanding Withdraw Requests Failed {Style.RESET_ALL}"
+            )
+            return
+        
+        if index_totals == 0:
+            self.log(
+                f"{Fore.CYAN+Style.BRIGHT}   Status   :{Style.RESET_ALL}"
+                f"{Fore.YELLOW+Style.BRIGHT} No Available Outstanding Withdraw Requests {Style.RESET_ALL}"
+            )
+            return
+
+        for index in range(index_totals - 1):
+            self.log(
+                f"{Fore.GREEN+Style.BRIGHT} ● {Style.RESET_ALL}"
+                f"{Fore.BLUE+Style.BRIGHT}Claim{Style.RESET_ALL}"
+                f"{Fore.WHITE+Style.BRIGHT} {index+1} {Style.RESET_ALL}"
+                f"{Fore.MAGENTA+Style.BRIGHT}Of{Style.RESET_ALL}"
+                f"{Fore.WHITE+Style.BRIGHT} {index_totals - 1} {Style.RESET_ALL}                                   "
+            )
+
+            await self.process_perform_claim(account, address, index, use_proxy)
+            await self.print_timer()
+
     async def process_accounts(self, account: str, address: str, option: int, use_proxy: bool, rotate_proxy: bool):
         is_valid = await self.process_check_connection(address, use_proxy, rotate_proxy)
         if is_valid:
@@ -1188,6 +1244,13 @@ class Ekox:
             elif option == 6:
                 self.log(
                     f"{Fore.CYAN+Style.BRIGHT}Option    :{Style.RESET_ALL}"
+                    f"{Fore.BLUE+Style.BRIGHT} Claim Rewards {Style.RESET_ALL}"
+                )
+                await self.process_option_6(account, address, use_proxy)
+
+            elif option == 7:
+                self.log(
+                    f"{Fore.CYAN+Style.BRIGHT}Option    :{Style.RESET_ALL}"
                     f"{Fore.BLUE+Style.BRIGHT} Run All Features {Style.RESET_ALL}"
                 )
 
@@ -1201,6 +1264,7 @@ class Ekox:
                 
                 await self.process_option_4(account, address, use_proxy)
                 await self.process_option_5(account, address, use_proxy)
+                await self.process_option_6(account, address, use_proxy)
 
     async def main(self):
         try:
